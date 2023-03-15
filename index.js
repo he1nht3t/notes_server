@@ -5,22 +5,6 @@ require("dotenv").config();
 
 const Note = require("./models/note");
 
-//unknown endpoint handler
-const unknownEndpoint = (req, res) => {
-	res.status(404).send({ error: "unknown endpoint" });
-};
-
-//error handler
-const errorHandler = (error, req, res, next) => {
-	console.log(error.message);
-
-	if (error.name === "CastError") {
-		return res.status(400).send({ error: "malformatted id" });
-	}
-
-	next(error);
-};
-
 app.use(cors());
 app.use(express.json());
 app.use(express.static("dist"));
@@ -33,12 +17,8 @@ app.get("/api/notes", (req, res) => {
 	});
 });
 
-app.post("/api/notes", (req, res) => {
+app.post("/api/notes", (req, res, next) => {
 	const body = req.body;
-
-	if (body.content === undefined) {
-		return res.status(400).json({ error: "content missing" });
-	}
 
 	const note = new Note({
 		content: body.content,
@@ -46,9 +26,11 @@ app.post("/api/notes", (req, res) => {
 		date: new Date(),
 	});
 
-	note.save().then(savedNote => {
-		res.json(savedNote);
-	});
+	note.save()
+		.then(savedNote => {
+			res.json(savedNote);
+		})
+		.catch(error => next(error));
 });
 
 app.get("/api/notes/:id", (req, res, next) => {
@@ -70,30 +52,51 @@ app.delete("/api/notes/:id", (req, res, next) => {
 
 	Note.findByIdAndRemove(id)
 		.then(result => {
-			res.status(204).end();
+			if (result) {
+				return res.status(204).end();
+			} else {
+				return res.status(404).end();
+			}
 		})
 		.catch(error => next(error));
-
-	res.status(204).end();
 });
 
 app.put("/api/notes/:id", (req, res, next) => {
 	const id = req.params.id;
-	const body = req.body;
+	const { content, important } = req.body;
 
-	const note = {
-		content: body.content,
-		important: body.important,
-	};
-
-	Note.findByIdAndUpdate(id, note, { new: true })
+	Note.findByIdAndUpdate(
+		id,
+		{ content, important },
+		{ new: true, runValidators: true, context: "query" }
+	)
 		.then(updatedNote => {
 			res.json(updatedNote);
 		})
 		.catch(error => next(error));
 });
 
+//unknown endpoint handler
+const unknownEndpoint = (req, res) => {
+	res.status(404).send({ error: "unknown endpoint" });
+};
+
 app.use(unknownEndpoint);
+
+//error handler
+const errorHandler = (error, req, res, next) => {
+	console.log(error.message);
+
+	if (error.name === "CastError") {
+		return res.status(400).send({ error: "malformatted id" });
+	}
+
+	if (error.name === "ValidationError") {
+		return res.status(400).json({ error: error.message });
+	}
+
+	next(error);
+};
 
 app.use(errorHandler);
 
